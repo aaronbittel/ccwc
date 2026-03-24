@@ -2,6 +2,6 @@
 
 set -xe
 
-CFLAGS="-Wall -Wextra -pedantic"
+CFLAGS="-Wall -Wextra -pedantic -ggdb"
 
 gcc $CFLAGS -o ccwc main.c
