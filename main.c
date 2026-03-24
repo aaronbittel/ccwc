@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -13,11 +14,27 @@ typedef struct {
 #define SV_Fmt "%.*s"
 #define SV_Arg(sv) (int)(sv).count, (sv).data
 
+#define UNICODE_ASCII 0x7F              // 1xxxxxxx
+#define UNICODE_2BTYE 0xDF              // 110xxxxx
+#define UNICODE_3BTYE 0xEF              // 1110xxxx
+#define UNICODE_4BTYE 0xF7              // 11110xxx
+#define UNICODE_CONTINUATION_UPPER 0xBF // 10111111
+#define UNICODE_CONTINUATION_LOWER 0x80 // 10000000
+
 String_View sv_from_cstr(const char* s);
 String_View sv_chop_by_delim(String_View* sv, char delim);
 String_View sv_chop_by_func(String_View* sv, int (*func)(int));
 void sv_trim_left(String_View* sv);
 size_t get_filesize(FILE* f);
+size_t get_unicode_length(unsigned char c);
+bool is_unicode_continuation(unsigned char c);
+
+void printBinary(unsigned char byte) {
+    for (int i = 7; i >= 0; i--) {
+        printf("%d", (byte >> i) & 1);
+    }
+    printf("\n");
+}
 
 int main(int argc, char** argv) {
     if (argc != 3) {
@@ -70,6 +87,29 @@ int main(int argc, char** argv) {
             word_count += 1;
         }
         printf("  %ld %s\n", word_count, filename);
+        free(buf);
+    } else if (strcmp(argv[1], "-m") == 0) {
+        char* buf = (char*)malloc((size_t) filesize);
+        if (buf == NULL) {
+            perror("malloc failed");
+        }
+        if (fread(buf, 1, filesize, f) != filesize) {
+            fprintf(stderr, "error occured when reading the file %s\n", filename);
+            exit(EXIT_FAILURE);
+        }
+        String_View sv = sv_from_cstr(buf);
+        size_t char_count = 0;
+        for (size_t i = 0; i < sv.count; i++) {
+            size_t char_length = get_unicode_length((unsigned char)sv.data[i]);
+            for (size_t j = 0; j < char_length - 1; j++) {
+                if (!is_unicode_continuation((unsigned char)sv.data[i+1])) {
+                    assert(false && "invalid utf-8 character");
+                }
+                i += 1;
+            }
+            char_count += 1;
+        }
+        printf("  %zu %s\n", char_count, filename);
         free(buf);
     }
 
@@ -166,4 +206,16 @@ size_t get_filesize(FILE* f) {
     }
 
     return (size_t) filesize;
+}
+
+size_t get_unicode_length(unsigned char c) {
+    if (c <= UNICODE_ASCII) return 1;
+    if (c <= UNICODE_2BTYE) return 2;
+    if (c <= UNICODE_3BTYE) return 3;
+    if (c <= UNICODE_4BTYE) return 4;
+    assert(false && "invalid utf-8 character");
+}
+
+bool is_unicode_continuation(unsigned char c) {
+    return (c >= UNICODE_CONTINUATION_LOWER) && (c <= UNICODE_CONTINUATION_UPPER);
 }
