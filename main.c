@@ -1,4 +1,5 @@
 #include <string.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
@@ -14,6 +15,8 @@ typedef struct {
 
 String_View sv_from_cstr(const char* s);
 String_View sv_chop_by_delim(String_View* sv, char delim);
+String_View sv_chop_by_func(String_View* sv, int (*func)(int));
+void sv_trim_left(String_View* sv);
 size_t get_filesize(FILE* f);
 
 int main(int argc, char** argv) {
@@ -48,6 +51,25 @@ int main(int argc, char** argv) {
             line_count += 1;
         }
         printf("  %ld %s\n", line_count, filename);
+        free(buf);
+    } else if (strcmp(argv[1], "-w") == 0) {
+        char* buf = (char*)malloc((size_t) filesize);
+        if (buf == NULL) {
+            perror("malloc failed");
+        }
+        if (fread(buf, 1, filesize, f) != filesize) {
+            fprintf(stderr, "error occured when reading the file %s\n", filename);
+            exit(EXIT_FAILURE);
+        }
+        String_View sv = sv_from_cstr(buf);
+        size_t word_count = 0;
+        while (sv.count > 0) {
+            sv_trim_left(&sv);
+            if (sv.count == 0) break;
+            sv_chop_by_func(&sv, isspace);
+            word_count += 1;
+        }
+        printf("  %ld %s\n", word_count, filename);
         free(buf);
     }
 
@@ -90,6 +112,38 @@ String_View sv_chop_by_delim(String_View* sv, char delim) {
     }
 
     return result;
+}
+
+String_View sv_chop_by_func(String_View* sv, int (*func)(int)) {
+    if (sv->count == 0) {
+        return (String_View){ .data = sv->data };
+    }
+
+    String_View result = { .data = sv->data, .count = sv->count };
+
+    while (sv->count > 0 && func(sv->data[0]) == 0) {
+        sv->data += 1;
+        sv->count -= 1;
+    }
+
+    result.count -= sv->count;
+
+    // go over delimiter
+    if (sv->count > 0) {
+        sv->data += 1;
+        sv->count -= 1;
+    }
+
+    return result;
+}
+
+void sv_trim_left(String_View* sv) {
+    if (sv->count == 0) return;
+
+    while (sv->count > 0 && isspace(sv->data[0]) != 0) {
+        sv->data += 1;
+        sv->count -= 1;
+    }
 }
 
 size_t get_filesize(FILE* f) {
