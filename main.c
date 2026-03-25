@@ -14,12 +14,13 @@ typedef struct {
 #define SV_Fmt "%.*s"
 #define SV_Arg(sv) (int)(sv).count, (sv).data
 
-#define UNICODE_ASCII 0x7F              // 1xxxxxxx
-#define UNICODE_2BTYE 0xDF              // 110xxxxx
-#define UNICODE_3BTYE 0xEF              // 1110xxxx
-#define UNICODE_4BTYE 0xF7              // 11110xxx
-#define UNICODE_CONTINUATION_UPPER 0xBF // 10111111
-#define UNICODE_CONTINUATION_LOWER 0x80 // 10000000
+#define UNICODE_ASCII_UPPER 0x7F              // 1 1111111
+#define UNICODE_2BYTE_UPPER 0xDF              // 110 11111
+#define UNICODE_3BTYE_UPPER 0xEF              // 1110 1111
+#define UNICODE_4BTYE_UPPER 0xF7              // 11110 111
+
+#define UNICODE_CONTINUATION_UPPER 0xBF       // 10 111111
+#define UNICODE_CONTINUATION_LOWER 0x80       // 10 000000
 
 #define C_FLAG 0x01 << 0
 #define L_FLAG 0x01 << 1
@@ -250,10 +251,10 @@ size_t get_filesize(FILE* f) {
 }
 
 size_t get_unicode_length(unsigned char c) {
-    if (c <= UNICODE_ASCII) return 1;
-    if (c <= UNICODE_2BTYE) return 2;
-    if (c <= UNICODE_3BTYE) return 3;
-    if (c <= UNICODE_4BTYE) return 4;
+    if (c <= UNICODE_ASCII_UPPER) return 1;
+    if (c <= UNICODE_2BYTE_UPPER) return 2;
+    if (c <= UNICODE_3BTYE_UPPER) return 3;
+    if (c <= UNICODE_4BTYE_UPPER) return 4;
     assert(false && "invalid utf-8 character");
 }
 
