@@ -26,6 +26,11 @@ typedef struct {
 #define W_FLAG 0x01 << 2
 #define M_FLAG 0x01 << 3
 
+#define FILENAMES_CAPACITY 256
+
+static size_t filenames_count = 0;
+char* filenames[FILENAMES_CAPACITY] = {0};
+
 String_View sv_from_cstr(const char* s);
 String_View sv_chop_by_delim(String_View* sv, char delim);
 String_View sv_chop_by_func(String_View* sv, int (*func)(int));
@@ -35,21 +40,15 @@ size_t get_unicode_length(unsigned char c);
 bool is_unicode_continuation(unsigned char c);
 bool flag_provided(int flags, int flag);
 
-void printBinary(unsigned char byte) {
-    for (int i = 7; i >= 0; i--) {
-        printf("%d", (byte >> i) & 1);
-    }
-    printf("\n");
-}
+// TODO: Read input from stdin if no file is given
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s [-c|-l|-w|-m] <file>\n", argv[0]);
+        fprintf(stderr, "Usage: %s [-c|-l|-w|-m] <file> <file> ...\n", argv[0]);
         exit(EXIT_FAILURE);
     }
 
     int flags = 0;
-    const char* filename = NULL;
 
     for (size_t i = 1; i < (size_t)argc; i++) {
         if (strcmp(argv[i], "-c") == 0) {
@@ -61,87 +60,103 @@ int main(int argc, char** argv) {
         } else if (strcmp(argv[i], "-m") == 0) {
             flags |= M_FLAG;
         } else {
-            if (filename != NULL) {
-                fprintf(stderr, "error: multiple files are currently not supported\n");
-                fprintf(stderr, "only running `%s` for file `%s`\n", argv[0], filename);
-            } else {
-                filename = argv[i];
-            }
+            filenames[filenames_count++] = argv[i];
         }
     }
 
-    if (filename == NULL) {
-        fprintf(stderr, "error: no file provided\n");
-        fprintf(stderr, "Usage: %s [-c|-l|-w|-m] <file>\n", argv[0]);
+    if (filenames_count == 0) {
+        fprintf(stderr, "error: no files provided\n");
+        fprintf(stderr, "Usage: %s [-c|-l|-w|-m] <file> <file> ...\n", argv[0]);
         exit(EXIT_FAILURE);
     }
 
-    if (argc == 2) { // no flags provided
+    if (flags == 0) { // no flags provided
         flags = C_FLAG | L_FLAG | W_FLAG;
     }
 
-    FILE* f = fopen(filename, "r");
-    if (f == NULL) {
-        perror("fopen failed");
-    }
+    size_t total_filesize = 0;
+    size_t total_line_count = 0;
+    size_t total_word_count = 0;
+    size_t total_char_count = 0;
 
-    size_t filesize = get_filesize(f);
-    size_t line_count, word_count, char_count;
-
-    char* buf = (char*)malloc((size_t) filesize);
-    if (buf == NULL) {
-        perror("malloc failed");
-    }
-    if (fread(buf, 1, filesize, f) != filesize) {
-        fprintf(stderr, "error occured when reading the file %s\n", filename);
-        exit(EXIT_FAILURE);
-    }
-    String_View orig_sv = sv_from_cstr(buf);
-
-    if (flag_provided(flags, L_FLAG)) {
-        String_View sv = orig_sv;
-        line_count = 0;
-        while (sv.count > 0) {
-            sv_chop_by_delim(&sv, '\n');
-            line_count += 1;
+    for (size_t i = 0; i < filenames_count; i++) {
+        const char* filename = filenames[i];
+        FILE* f = fopen(filename, "r");
+        if (f == NULL) {
+            perror("fopen failed");
         }
-    }
-    if (flag_provided(flags, W_FLAG)) {
-        String_View sv = orig_sv;
-        word_count = 0;
-        while (sv.count > 0) {
-            sv_trim_left(&sv);
-            if (sv.count == 0) break;
-            sv_chop_by_func(&sv, isspace);
-            word_count += 1;
+
+        size_t filesize = get_filesize(f);
+        size_t line_count, word_count, char_count;
+
+        char* buf = (char*)malloc((size_t) filesize);
+        if (buf == NULL) {
+            perror("malloc failed");
         }
-    }
-    if (flag_provided(flags, M_FLAG)) {
-        String_View sv = orig_sv;
-        char_count = 0;
-        for (size_t i = 0; i < sv.count; i++) {
-            size_t char_length = get_unicode_length((unsigned char)sv.data[i]);
-            for (size_t j = 0; j < char_length - 1; j++) {
-                if (!is_unicode_continuation((unsigned char)sv.data[i+1])) {
-                    assert(false && "invalid utf-8 character");
-                }
-                i += 1;
+        if (fread(buf, 1, filesize, f) != filesize) {
+            fprintf(stderr, "error occured when reading the file %s\n", filename);
+            exit(EXIT_FAILURE);
+        }
+        String_View orig_sv = sv_from_cstr(buf);
+
+        if (flag_provided(flags, L_FLAG)) {
+            String_View sv = orig_sv;
+            line_count = 0;
+            while (sv.count > 0) {
+                sv_chop_by_delim(&sv, '\n');
+                line_count += 1;
             }
-            char_count += 1;
         }
+        if (flag_provided(flags, W_FLAG)) {
+            String_View sv = orig_sv;
+            word_count = 0;
+            while (sv.count > 0) {
+                sv_trim_left(&sv);
+                if (sv.count == 0) break;
+                sv_chop_by_func(&sv, isspace);
+                word_count += 1;
+            }
+        }
+        if (flag_provided(flags, M_FLAG)) {
+            String_View sv = orig_sv;
+            char_count = 0;
+            for (size_t i = 0; i < sv.count; i++) {
+                size_t char_length = get_unicode_length((unsigned char)sv.data[i]);
+                for (size_t j = 0; j < char_length - 1; j++) {
+                    if (!is_unicode_continuation((unsigned char)sv.data[i+1])) {
+                        assert(false && "invalid utf-8 character");
+                    }
+                    i += 1;
+                }
+                char_count += 1;
+            }
+        }
+
+        free(buf);
+
+        if (fclose(f) == EOF) {
+            perror("fclose failed");
+        }
+
+        if (flag_provided(flags, L_FLAG)) printf("%7zu", line_count);
+        if (flag_provided(flags, W_FLAG)) printf("%7zu", word_count);
+        if (flag_provided(flags, C_FLAG)) printf("%7zu", filesize);
+        if (flag_provided(flags, M_FLAG)) printf("%7zu", char_count);
+        printf(" %s\n", filename);
+
+        total_filesize += filesize;
+        total_line_count += line_count;
+        total_word_count += word_count;
+        total_char_count += char_count;
     }
 
-    free(buf);
-
-    if (fclose(f) == EOF) {
-        perror("fclose failed");
+    if (filenames_count > 1) {
+        if (flag_provided(flags, L_FLAG)) printf("%7zu", total_line_count);
+        if (flag_provided(flags, W_FLAG)) printf("%7zu", total_word_count);
+        if (flag_provided(flags, C_FLAG)) printf("%7zu", total_filesize);
+        if (flag_provided(flags, M_FLAG)) printf("%7zu", total_char_count);
+        printf(" total\n");
     }
-
-    if (flag_provided(flags, L_FLAG)) printf("  %zu", line_count);
-    if (flag_provided(flags, W_FLAG)) printf("  %zu", word_count);
-    if (flag_provided(flags, C_FLAG)) printf("  %zu", filesize);
-    if (flag_provided(flags, M_FLAG)) printf("  %zu", char_count);
-    printf("  %s\n", filename);
 
     return 0;
 }
