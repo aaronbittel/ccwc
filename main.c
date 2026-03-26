@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <unistd.h>
+#include <sys/types.h>
 
 typedef struct {
     const char* data;
@@ -41,14 +43,19 @@ size_t get_unicode_length(unsigned char c);
 bool is_unicode_continuation(unsigned char c);
 bool flag_provided(int flags, int flag);
 
-// TODO: Read input from stdin if no file is given
+int main2() {
+    int capacity = 256;
+    char buf[capacity];
+    ssize_t n;
+    while ((n = read(STDIN_FILENO, buf, capacity)) > 0) {
+        printf("Read(%zu): %s\n", n, buf);
+        memset(buf, 0, capacity);
+    }
+    if (n == -1) perror("read failed");
+    return 0;
+}
 
 int main(int argc, char** argv) {
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s [-c|-l|-w|-m] <file> <file> ...\n", argv[0]);
-        exit(EXIT_FAILURE);
-    }
-
     int flags = 0;
 
     for (size_t i = 1; i < (size_t)argc; i++) {
@@ -65,15 +72,55 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (filenames_count == 0) {
-        fprintf(stderr, "error: no files provided\n");
-        fprintf(stderr, "Usage: %s [-c|-l|-w|-m] <file> <file> ...\n", argv[0]);
-        exit(EXIT_FAILURE);
-    }
-
     if (flags == 0) { // no flags provided
         flags = C_FLAG | L_FLAG | W_FLAG;
     }
+
+    // Read from stdin
+    if (filenames_count == 0) {
+        int capacity = 2;
+        char buf[capacity];
+        ssize_t n;
+        size_t filesize = 0;
+        size_t line_count = 0;
+        size_t word_count = 0;
+        size_t char_count = 0;
+        size_t exp_uc_cont_bytes = 0;
+        bool in_word = false;
+        while ((n = read(STDIN_FILENO, buf, capacity)) > 0) {
+            filesize += n;
+            for (size_t i = 0; (ssize_t)i < n; i++) {
+                if (buf[i] == '\n') line_count += 1;
+                if (isspace(buf[i])) {
+                    if (in_word) {
+                        word_count += 1;
+                        in_word = false;
+                    }
+                } else {
+                    if (!in_word) in_word = true;
+                }
+                if (exp_uc_cont_bytes > 0) {
+                    assert(is_unicode_continuation((unsigned char)buf[i]));
+                    exp_uc_cont_bytes -= 1;
+                    if (exp_uc_cont_bytes == 0) char_count += 1;
+                } else {
+                    if (isascii(buf[i])) {
+                        char_count += 1;
+                    } else {
+                        exp_uc_cont_bytes = get_unicode_length((unsigned char)buf[i]) - 1;
+                    }
+                }
+            }
+        }
+        if (n == -1) perror("read failed");
+        if (flag_provided(flags, L_FLAG)) printf("%7zu", line_count);
+        if (flag_provided(flags, W_FLAG)) printf("%7zu", word_count);
+        if (flag_provided(flags, C_FLAG)) printf("%7zu", filesize);
+        if (flag_provided(flags, M_FLAG)) printf("%7zu", char_count);
+        printf("\n");
+        exit(EXIT_SUCCESS);
+    }
+
 
     size_t total_filesize = 0;
     size_t total_line_count = 0;
