@@ -42,6 +42,8 @@ size_t get_filesize(FILE* f);
 size_t get_unicode_length(unsigned char c);
 bool is_unicode_continuation(unsigned char c);
 bool flag_provided(int flags, int flag);
+void process_word_count(char c, bool* in_word, size_t* word_count);
+void process_char_count(unsigned char c, size_t* exp_uc_cont_bytes, size_t* char_count);
 
 int main2() {
     int capacity = 256;
@@ -78,40 +80,29 @@ int main(int argc, char** argv) {
 
     // Read from stdin
     if (filenames_count == 0) {
-        int capacity = 2;
+        int capacity = 8096;
         char buf[capacity];
         ssize_t n;
         size_t filesize = 0;
         size_t line_count = 0;
         size_t word_count = 0;
         size_t char_count = 0;
-        size_t exp_uc_cont_bytes = 0;
+        size_t remaining_uc_bytes = 0;
+        bool do_c = flag_provided(flags, C_FLAG);
+        bool do_l = flag_provided(flags, L_FLAG);
+        bool do_w = flag_provided(flags, W_FLAG);
+        bool do_m = flag_provided(flags, M_FLAG);
         bool in_word = false;
         while ((n = read(STDIN_FILENO, buf, capacity)) > 0) {
-            filesize += n;
+            if (do_c) filesize += n;
             for (size_t i = 0; (ssize_t)i < n; i++) {
-                if (buf[i] == '\n') line_count += 1;
-                if (isspace(buf[i])) {
-                    if (in_word) {
-                        word_count += 1;
-                        in_word = false;
-                    }
-                } else {
-                    if (!in_word) in_word = true;
-                }
-                if (exp_uc_cont_bytes > 0) {
-                    assert(is_unicode_continuation((unsigned char)buf[i]));
-                    exp_uc_cont_bytes -= 1;
-                    if (exp_uc_cont_bytes == 0) char_count += 1;
-                } else {
-                    if (isascii(buf[i])) {
-                        char_count += 1;
-                    } else {
-                        exp_uc_cont_bytes = get_unicode_length((unsigned char)buf[i]) - 1;
-                    }
-                }
+                if (do_l && buf[i] == '\n') line_count += 1;
+                if (do_w) process_word_count(buf[i], &in_word, &word_count);
+                if (do_m) process_char_count((unsigned char)buf[i],
+                        &remaining_uc_bytes, &char_count);
             }
         }
+        if (in_word) word_count += 1;
         if (n == -1) perror("read failed");
         if (flag_provided(flags, L_FLAG)) printf("%7zu", line_count);
         if (flag_provided(flags, W_FLAG)) printf("%7zu", word_count);
@@ -311,4 +302,29 @@ bool is_unicode_continuation(unsigned char c) {
 
 bool flag_provided(int flags, int flag) {
     return flags & flag;
+}
+
+void process_word_count(char c, bool* in_word, size_t* word_count) {
+    if (isspace(c)) {
+        if (*in_word) {
+            *word_count += 1;
+            *in_word = false;
+        }
+    } else {
+        *in_word = true;
+    }
+}
+
+void process_char_count(unsigned char c, size_t* exp_uc_cont_bytes, size_t* char_count) {
+    if (*exp_uc_cont_bytes > 0) {
+        assert(is_unicode_continuation(c));
+        *exp_uc_cont_bytes -= 1;
+        if (*exp_uc_cont_bytes == 0) *char_count += 1;
+    } else {
+        if (isascii(c)) {
+            *char_count += 1;
+        } else {
+            *exp_uc_cont_bytes = get_unicode_length(c) - 1;
+        }
+    }
 }
